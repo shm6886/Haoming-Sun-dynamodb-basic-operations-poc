@@ -1,43 +1,178 @@
-# Haoming-Sun-dynamodb-basic-operations-poc
-GSI 就像图书馆的目录卡片                                                                                                                                                                    
-   没有 GSI 的世界：                                                                                                                                                                           
-  你有一个巨大的交易账本，按照"卡号+时间"排列。现在你想找"所有失败的交易"。你怎么办？                                                                                                         
-  - 从第 1 页开始，一条一条翻看，标记每条失败的交易                                                                                                                                           
-  - 翻完整个账本才能知道有多少条失败的                                                                                                                                                        
-  - 很慢 ❌                                                                                                                                                                                   
+# DynamoDB 基础操作 POC — 学习总结
 
-  有 GSI 的世界：
-  图书馆在旁边专门写了一本小目录，按照"交易状态（成功/失败/待处理）+ 时间"排列。现在你想找所有失败的交易：
-  - 打开这本小目录，找"失败"这一页
-  - 直接看这一页的所有条目
-  - 很快 ✅
+> 一个循序渐进的 DynamoDB + pynamodb 学习项目，从最小骨架到单表设计，共 12 个示例。
 
-  ---
-  这个脚本做的事：
+## 📚 项目概述
 
-  1. 创建小目录 — StatusIndex（按交易状态分类）
-  2. 写入数据 — 15 条交易，系统自动在两个地方更新：
-    - 原账本（按卡号+时间）
-    - 小目录（按状态+时间）
-  3. 查询 1 — "给我所有失败的交易" → 打开小目录，看"失败"那页
-  4. 查询 2 — "给我最近 3 条待处理的交易" → 打开小目录，看"待处理"那页，取最新的 3 条
+这个项目是对 DynamoDB 最佳实践的学习复现。通过 12 个递进式的示例，掌握：
 
-  **核心概念**
-  - 综合应用：表结构 + GSI + 多种查询模式
-  - 真实场景：管道运行追踪（AxiomCard 项目）
+- **基础**（00-05）：表结构、属性类型、CRUD、批量、查询优化
+- **优化**（06-08）：条件表达式、事务、二级索引
+- **高级**（09-11）：综合演示、单表 1:N、单表 M:N
 
-  **表设计**
-  - 主表：pipeline_name (PK) + run_id (SK)
-  - GSI：run_status (PK) + start_ts (SK)
-  - 属性：状态、时间戳、处理数、隔离数、S3 路径等
+**核心语言**：Python + pynamodb（DynamoDB 的 ORM）
+**学习时间**：4-6 小时
+**难度**：初级 → 中级
 
-  **三个查询模式**
-  1. 最近 N 次运行（某管道）→ 主表查询
-  2. 全平台失败运行 → GSI 查询（5 倍便宜）
-  3. 平均指标 → 主表 + Python 聚合
+---
 
-  **性能对比**
-  - Scan + Filter：扫描 30 条，成本 2.5 RCU
-  - Query GSI：扫描 3 条，成本 0.5 RCU
-  - **结论**：用 GSI 代替 scan
+## 🎯 核心学习成果
+
+### 掌握的关键概念
+- ✅ **架构设计**：单表 vs 多表，PK/SK 设计
+- ✅ **查询优化**：Query vs Scan，GSI 的威力（5 倍成本差）
+- ✅ **扩展能力**：批量操作、事务、条件表达式
+- ✅ **实战模式**：1:N、M:N 关系设计
+
+### 最重要的三个洞察
+1. **Query > Scan**：永远用 Query + 索引代替 Scan
+2. **单表 > 多表**：用单表设计避免 JOIN（DynamoDB 无 JOIN）
+3. **成本由 PK 决定**：好的分区键设计 = 好的性能
+
+---
+
+## 📖 12 个学习模块概览
+
+| # | 模块 | 重点 | 学习时间 |
+|---|---|---|---|
+| **00** | 最小骨架 | Model、Attribute、Meta | 15 分钟 |
+| **01** | 属性类型 | 8 种属性 + default / null | 20 分钟 |
+| **02** | 表管理 | 创建、销毁、计费模式 | 15 分钟 |
+| **03** | CRUD | save、get、update、delete、refresh | 25 分钟 |
+| **04** | 批量操作 | batch_write、batch_get、自动分块 | 20 分钟 |
+| **05** | Query vs Scan | ⭐ 性能课题，成本 5 倍差 | 30 分钟 |
+| **06** | 条件表达式 | 防覆盖、乐优锁 | 20 分钟 |
+| **07** | 事务 | 多行原子操作 | 20 分钟 |
+| **08** | 二级索引 | ⭐ GSI vs LSI、投影 | 30 分钟 |
+| **09** | 综合演示 | 真实场景组合 | 25 分钟 |
+| **10** | 单表 1:N | ⭐⭐ 客户→卡→交易 | 40 分钟 |
+| **11** | 单表 M:N | ⭐⭐ 三种设计方案对比 | 40 分钟 |
+
+---
+
+## 🔑 核心知识梗概
+
+### 00-05：基础与查询优化
+**一句话总结**：学会 CRUD 和查询，理解 Query 和 Scan 的成本差异。
+
+**关键数据**：
+```
+Scan 全表 30 项  → 2.5 RCU
+Query GSI 3 项  → 0.5 RCU
+成本差：5 倍！
+```
+
+### 06-08：优化与索引
+**一句话总结**：条件表达式处理并发，GSI 解决查询问题。
+
+**关键模式**：
+- 条件表达式 = DynamoDB 的"锁"
+- GSI = "反向索引"，一个写、两个查询方向
+
+### 09-11：单表设计（最重要）
+**一句话总结**：一张表、多种实体、用 PK 前缀分组、SK 前缀区分类型。
+
+**单表 vs 多表**：
+```
+多表（Customer / Card / Transaction）
+查客户全部信息 → 需要 3 次查询 ❌
+
+单表（所有数据）
+query("CUSTOMER#C001") → 一次搞定 ✅
+```
+
+---
+
+## 🚀 快速开始
+
+### 1. 环境要求
+- Python 3.10+
+- AWS 账户（us-east-1 DynamoDB 权限）
+
+### 2. 安装
+```bash
+# 克隆项目（本项目基于 learn-dynamodb-basic-operations）
+git clone https://github.com/shm6886/Haoming-Sun-dynamodb-basic-operations-poc
+cd Haoming-Sun-dynamodb-basic-operations-poc
+
+# 安装依赖
+pip install -r requirements.txt
+# 或使用 uv
+uv sync
+```
+
+### 3. 配置 AWS
+编辑 `.env`，填入你的 AWS profile（需要 us-east-1 权限）：
+```bash
+AWS_PROFILE="your-profile-name"
+```
+
+### 4. 运行示例
+```bash
+# 运行单个脚本
+python examples/00-minimal-poc/s01_minimal_poc.py
+
+# 清理所有表
+python examples/cleanup_all_tables.py
+```
+
+---
+
+## 📚 核心知识速查
+
+### Query vs Scan
+| 操作 | 成本 | 速度 | 何时用 |
+|---|---|---|---|
+| **Query** | ∝ 结果数 | 快 | ✅ 生产代码 |
+| **Scan** | ∝ 表大小 | 慢 | ❌ 运维脚本 only |
+
+**法则**：想不到 Query 方案？→ 加 GSI → 再 Query
+
+### 单表设计核心
+```python
+PK = "ENTITY_TYPE#ID"
+SK = "RELATIONSHIP#DATA"
+
+# 例：单表存储 Customer / Card / Transaction
+CUSTOMER#C001          | PROFILE
+CUSTOMER#C001          | CARD#CD001
+CUSTOMER#C001          | TX#CD001#2026-04-27T10:00
+```
+
+### 成本优化顺序
+1. **设计好 PK**（最重要，直接影响分布和查询）
+2. **用 batch_write / batch_get**（减少往返）
+3. **加 GSI**（避免 scan）
+4. **条件表达式**（并发安全）
+
+---
+
+## 🛠️ 技术栈
+
+| 工具 | 用途 |
+|---|---|
+| **pynamodb** | DynamoDB Python ORM |
+| **boto3** | AWS 官方 SDK |
+| **pytest** | 测试框架 |
+| **uv** | 包管理器 |
+
+---
+
+## 📚 扩展阅读
+
+- [AWS DynamoDB 官方指南](https://docs.aws.amazon.com/dynamodb/)
+- [Single-table design patterns](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/best-practices.html)
+- [pynamodb 文档](https://pynamodb.readthedocs.io/)
+- [boto3 DynamoDB 参考](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb.html)
+
+---
+
+## 💡 最后的话
+
+> DynamoDB 的关键不是记住 API，而是理解它的设计哲学：
+> - 无连接（REST API）→ 高扩展性
+> - 无 JOIN → 单表设计
+> - 按容量计费 → 查询优化最重要
+
+掌握这三点，你就真正理解了为什么要这样设计数据库。
 
